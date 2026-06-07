@@ -1,0 +1,79 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: api-service/Dockerfile
+    container_name: ${API_CONTAINER_NAME}
+    restart: unless-stopped
+    env_file:
+      - ./.env
+      - ${POSTGRES_ENV_FILE}
+    environment:
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      API_ACCESS_TOKEN_EXPIRE_MINUTES: ${API_ACCESS_TOKEN_EXPIRE_MINUTES}
+      API_RPC_TIMEOUT_SECONDS: ${API_RPC_TIMEOUT_SECONDS}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace:/workspace/api-service
+    working_dir: /workspace
+    command: ["uvicorn", "api_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${API_HOST_PORT}:8000"
+    networks:
+      - backend
+    logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  api-tests:
+    build:
+      context: ..
+      dockerfile: api-service/Dockerfile
+    container_name: ${API_TESTS_CONTAINER_NAME}
+    profiles: ["test"]
+    env_file:
+      - ./.env
+      - ${POSTGRES_ENV_FILE}
+    environment:
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      API_ACCESS_TOKEN_EXPIRE_MINUTES: ${API_ACCESS_TOKEN_EXPIRE_MINUTES}
+      API_RPC_TIMEOUT_SECONDS: ${API_RPC_TIMEOUT_SECONDS}
+      API_BASE_URL: http://api:8000
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace:/workspace/api-service
+    working_dir: /workspace
+    networks:
+      - backend
+    logging: *default-logging
+    command: ["pytest", "-q", "tests/test_api_unit.py", "tests/test_api_service.py", "tests/test_api_auth.py"]
+
+networks:
+  backend:
+    name: ${SHARED_NETWORK_NAME}
